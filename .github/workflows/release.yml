@@ -1,0 +1,81 @@
+name: Build and Release
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      # Build ARM-only version
+      - name: Build ARM archive
+        run: |
+          xcodebuild -project RestBreak.xcodeproj \
+            -scheme RestBreak \
+            -configuration Release \
+            -archivePath build/RestBreak-arm64.xcarchive \
+            archive \
+            ARCHS=arm64 \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Export ARM app
+        run: |
+          mkdir -p build/Export-ARM
+          cp -R build/RestBreak-arm64.xcarchive/Products/Applications/RestBreak.app build/Export-ARM/
+
+      - name: Create ARM zip
+        run: |
+          cd build/Export-ARM
+          zip -r -y ../RestBreak-Apple-Silicon.zip RestBreak.app
+
+      # Build Universal Binary (ARM + Intel)
+      - name: Build Universal archive
+        run: |
+          xcodebuild -project RestBreak.xcodeproj \
+            -scheme RestBreak \
+            -configuration Release \
+            -archivePath build/RestBreak-universal.xcarchive \
+            archive \
+            ARCHS="arm64 x86_64" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Export Universal app
+        run: |
+          mkdir -p build/Export-Universal
+          cp -R build/RestBreak-universal.xcarchive/Products/Applications/RestBreak.app build/Export-Universal/
+
+      - name: Verify Universal Binary
+        run: |
+          lipo -info build/Export-Universal/RestBreak.app/Contents/MacOS/RestBreak
+
+      - name: Create Universal zip
+        run: |
+          cd build/Export-Universal
+          zip -r -y ../RestBreak-Universal.zip RestBreak.app
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/RestBreak-Apple-Silicon.zip
+            build/RestBreak-Universal.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
